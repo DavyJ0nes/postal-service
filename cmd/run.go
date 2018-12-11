@@ -10,8 +10,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
-	"time"
 )
 
 // runCmd represents the run command
@@ -21,9 +21,14 @@ var runCmd = &cobra.Command{
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		color.Blue("Running Postal Service")
-		if err := run(); err != nil {
+		r := newRunner()
+		if err := r.run(); err != nil {
 			log.Fatal(err)
 		}
+
+		// print output to CLI
+		color.White("-----------------------------")
+		color.White(r.output.String())
 	},
 }
 
@@ -31,30 +36,59 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 }
 
-func run() error {
-	collections := viper.GetStringMapStringSlice("postman")["collections"]
+type runner struct {
+	collections []string
+	cwd string
+	hostName string
+	iterations int
+	networkName string
+	output *bytes.Buffer
+}
 
+func newRunner() *runner {
+	var stdout bytes.Buffer
+	collections := viper.GetStringMapStringSlice("postman")["collections"]
+	fullPath, _ := os.Getwd()
+	splits := strings.Split(fullPath, "/")
+	thisDir := splits[len(splits)-1:]
+	network := viper.GetStringMapString("postman")["network"]
+	networkName := fmt.Sprintf("%s_%s", thisDir[0], network)
+	hostName := viper.GetStringMapString("postman")["host"]
+	iterationSetting := viper.GetStringMapString("postman")["iterations"]
+	iterations, _ := strconv.Atoi(iterationSetting)
+
+	return &runner{
+		collections: collections,
+		cwd: fullPath,
+		hostName: hostName,
+		iterations: iterations,
+		networkName: networkName,
+		output: &stdout,
+
+	}
+}
+
+func (r runner) run() error {
 	// run docker compose up
-	if err := composeUp(); err != nil {
+	color.Blue("-- Initialising API")
+	if err := r.composeUp(); err != nil {
 		return err
 	}
 
-	defer composeDown()
+	defer r.composeDown()
 
 	// run newman with collections in loop
-	color.Blue("Running Postman Collection")
-	for _, collection := range collections {
-		if err := postman(collection); err != nil {
+	color.Blue("-- Running Postman Collection")
+	for _, collection := range r.collections {
+		if err := r.postman(collection); err != nil {
 			return err
 		}
 	}
 
-	// print output to CLI
 	return nil
 }
 
-func composeUp() error {
-	color.Blue("Initialising API")
+func (r runner) composeUp() error {
 	var stdout, stderr bytes.Buffer
 	command := "docker-compose up -d"
 	cmdParts := strings.Fields(command)
@@ -68,14 +102,13 @@ func composeUp() error {
 		return err
 	}
 
-	time.Sleep(3 * time.Second)
 	color.Yellow(stdout.String())
 	return nil
 }
 
-func composeDown() {
-	color.Blue("Killing API")
+func (r *runner) composeDown() {
 	var stdout, stderr bytes.Buffer
+	color.Blue("-- Killing API")
 
 	command := "docker-compose down"
 	cmdParts := strings.Fields(command)
@@ -87,22 +120,21 @@ func composeDown() {
 	if err := cmd.Run(); err != nil {
 		color.Red(stderr.String())
 	}
-
-	color.Yellow(stdout.String())
 }
 
-func postman(collection string) error {
-	color.Cyan("Running Collection: %s", collection)
-	var stdout, stderr bytes.Buffer
+func (r *runner) postman(collection string) error {
+	color.Cyan("-----------------------------")
+	color.Cyan("--- Running: %s", collection)
+	defer color.Cyan("-----------------------------")
 
-	pwd := os.Getenv("PWD")
-	postmanDir := fmt.Sprintf("%s:/etc/newman", pwd)
+	var stderr bytes.Buffer
+	postmanDir := fmt.Sprintf("%s:/etc/newman", r.cwd)
 
 	command := fmt.Sprintf(
-		"docker run --network=%s -v %s postman/newman:alpine run -n %d --global-var host=%s %s",
-		"basic-http_test",
+		"docker run --network=%s -v %s postman/newman:alpine run -r cli -n %d --reporter-cli-no-assertions --reporter-cli-no-success-assertions --reporter-cli-no-banner --global-var host=%s %s",
+		r.networkName,
 		postmanDir,
-		1,
+		r.iterations,
 		"web",
 		collection,
 	)
@@ -110,15 +142,12 @@ func postman(collection string) error {
 	cmdParts := strings.Fields(command)
 
 	cmd := exec.Command(cmdParts[0], cmdParts[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	color.Green("running: %s", command)
+	cmd.Stdout = r.output
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
 		return errors.Wrap(err, stderr.String())
 	}
 
-	color.Green(stdout.String())
 	return nil
 }

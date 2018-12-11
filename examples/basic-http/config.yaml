@@ -1,3 +1,6 @@
 postman:
+  network: test
+  host: web
+  iterations: 2
   collections:
     - basic-http.postman_collection.json

@@ -9,4 +9,3 @@ services:
 
 networks:
   test:
-

@@ -1,4 +1,7 @@
 postman:
+    network: test
+    host: web
+    iterations: 2
     collections:
-    - testing/postman/create-purchase-orders.postman_collection.json
-    - testing/postman/create-purchase-orders.postman_collection.json
+    - examples/basic-http/basic-http.postman_collection.json
+    - examples/basic-http/basic-http.postman_collection.json
