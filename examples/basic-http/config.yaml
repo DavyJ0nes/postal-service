@@ -1,0 +1,3 @@
+postman:
+  collections:
+    - basic-http.postman_collection.json

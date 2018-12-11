@@ -1,0 +1,4 @@
+postman:
+    collections:
+    - testing/postman/create-purchase-orders.postman_collection.json
+    - testing/postman/create-purchase-orders.postman_collection.json
