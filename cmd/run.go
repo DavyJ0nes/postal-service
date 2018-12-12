@@ -23,6 +23,8 @@ var runCmd = &cobra.Command{
 		color.Blue("Running Postal Service")
 		r := newRunner()
 		if err := r.run(); err != nil {
+			color.Red("-----------------------------")
+			color.Red(r.output.String())
 			log.Fatal(err)
 		}
 
